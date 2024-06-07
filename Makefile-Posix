@@ -1,0 +1,95 @@
+.POSIX:
+.SUFFIXES:
+
+include config.mk
+
+PKGS = wlroots wayland-server xcb xkbcommon libinput
+DWLCPPFLAGS = -I. -DWLR_USE_UNSTABLE -DVERSION=\"$(VERSION)\" $(CPPFLAGS) $(XWAYLAND)
+DWLCFLAGS = `pkg-config --cflags $(PKGS)` $(DWLCPPFLAGS) $(CFLAGS)
+LDLIBS = `pkg-config --libs $(PKGS)`
+
+WAYLAND_PROTOCOLS = `pkg-config --variable=pkgdatadir wayland-protocols`
+WAYLAND_SCANNER = `pkg-config --variable=wayland_scanner wayland-scanner`
+
+SRC = xdg-shell-protocol.c wlr-layer-shell-unstable-v1-protocol.c\
+	  idle-protocol.c util.c dwl.c
+OBJ = $(SRC:.c=.o)
+
+all: dwl
+
+$(OBJ): config.h config.mk
+
+config.h:
+	cp config.def.h $@
+
+.SUFFIXES: .c .o
+.c.o:
+	$(CC) $(DWLCFLAGS) -c $<
+
+dwl: $(OBJ)
+	$(CC) $(LDFLAGS) -o $@ $(LDLIBS) $(OBJ)
+
+xdg-shell-protocol.c: xdg-shell-protocol.h
+	$(WAYLAND_SCANNER) private-code \
+		$(WAYLAND_PROTOCOLS)/stable/xdg-shell/xdg-shell.xml $@
+
+xdg-shell-protocol.h:
+	$(WAYLAND_SCANNER) server-header \
+		$(WAYLAND_PROTOCOLS)/stable/xdg-shell/xdg-shell.xml $@
+
+wlr-layer-shell-unstable-v1-protocol.c: wlr-layer-shell-unstable-v1-protocol.h
+	$(WAYLAND_SCANNER) private-code protocols/wlr-layer-shell-unstable-v1.xml $@
+
+wlr-layer-shell-unstable-v1-protocol.h:
+	$(WAYLAND_SCANNER) server-header protocols/wlr-layer-shell-unstable-v1.xml $@
+
+idle-protocol.c: idle-protocol.h
+	$(WAYLAND_SCANNER) private-code protocols/idle.xml $@
+
+idle-protocol.h:
+	$(WAYLAND_SCANNER) server-header protocols/idle.xml $@
+
+clean:
+	rm -f dwl
+	rm -f $(OBJ)
+	rm -f xdg-shell-protocol.c xdg-shell-protocol.h
+	rm -f wlr-layer-shell-unstable-v1-protocol.c wlr-layer-shell-unstable-v1-protocol.h
+	rm -f idle-protocol.c idle-protocol.h
+
+dist: clean
+	mkdir -p dwl-$(VERSION)
+	cp -R LICENSE* Makefile README.md generate-version.sh client.h\
+		config.def.h config.mk protocols dwl.1 dwl.c util.c util.h\
+		dwl-$(VERSION)
+	echo "echo $(VERSION)" > dwl-$(VERSION)/generate-version.sh
+	tar -caf dwl-$(VERSION).tar.gz dwl-$(VERSION)
+	rm -rf dwl-$(VERSION)
+
+install: dwl
+	mkdir -p '$(DESTDIR)$(PREFIX)/bin'
+	cp -f dwl '$(DESTDIR)$(PREFIX)/bin'
+	chmod 755 '$(DESTDIR)$(PREFIX)/bin/dwl'
+	mkdir -p '$(DESTDIR)$(MANPREFIX)/man1'
+	cp -f dwl.1 '$(DESTDIR)$(MANPREFIX)/man1'
+	chmod 644 '$(DESTDIR)$(MANPREFIX)/man1/dwl.1'
+
+uninstall:
+	rm -f '$(DESTDIR)$(PREFIX)/bin/dwl'
+	rm -f '$(DESTDIR)$(MANPREFIX)/man1/dwl.1'
+
+.PHONY: all clean dist install uninstall
+
+
+#CONFIG.MK
+_VERSION = 0.3.1
+VERSION = `./generate-version.sh $(_VERSION)`
+
+# paths
+PREFIX = /usr/local
+MANPREFIX = $(PREFIX)/share/man
+
+# Default compile flags
+#CFLAGS = -O2 -pipe
+
+# Uncomment to build XWayland support
+#XWAYLAND = -DXWAYLAND
